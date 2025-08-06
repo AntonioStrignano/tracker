@@ -1,11 +1,20 @@
 package com.tracker.app.entity;
 
-import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "attachments")
@@ -17,27 +26,14 @@ public class Attachment {
     private Long id;
 
     @NotNull(message = "Transaction record is required")
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "trans_record_id", nullable = false)
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "trans_record_id", nullable = false, unique = true)
     private TransRecord transRecord;
-
-    @NotBlank(message = "File name is required")
-    @Size(max = 255, message = "File name must not exceed 255 characters")
-    @Column(name = "file_name", nullable = false, length = 255)
-    private String fileName;
 
     @NotBlank(message = "File path is required")
     @Size(max = 500, message = "File path must not exceed 500 characters")
     @Column(name = "file_path", nullable = false, length = 500)
     private String filePath;
-
-    @Positive(message = "File size must be positive")
-    @Column(name = "file_size")
-    private Long fileSize; // bytes
-
-    @Size(max = 100, message = "MIME type must not exceed 100 characters")
-    @Column(name = "mime_type", length = 100)
-    private String mimeType; // image/jpeg, image/png, application/pdf
 
     @Column(name = "uploaded_at", nullable = false, updatable = false)
     private LocalDateTime uploadedAt;
@@ -46,13 +42,9 @@ public class Attachment {
     public Attachment() {
     }
 
-    public Attachment(TransRecord transRecord, String fileName, String filePath,
-            Long fileSize, String mimeType) {
+    public Attachment(TransRecord transRecord, String filePath) {
         this.transRecord = transRecord;
-        this.fileName = fileName;
         this.filePath = filePath;
-        this.fileSize = fileSize;
-        this.mimeType = mimeType;
     }
 
     // Lifecycle callbacks
@@ -62,33 +54,16 @@ public class Attachment {
     }
 
     // Business methods
-    public boolean isImage() {
-        return mimeType != null && mimeType.startsWith("image/");
-    }
-
-    public boolean isPdf() {
-        return "application/pdf".equals(mimeType);
-    }
-
     public String getFileExtension() {
-        if (fileName != null && fileName.contains(".")) {
-            return fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
+        if (filePath != null && filePath.contains(".")) {
+            return filePath.substring(filePath.lastIndexOf(".") + 1).toLowerCase();
         }
         return "";
     }
 
-    public String getFormattedFileSize() {
-        if (fileSize == null) {
-            return "Unknown";
-        }
-
-        if (fileSize < 1024) {
-            return fileSize + " B";
-        }
-        if (fileSize < 1024 * 1024) {
-            return (fileSize / 1024) + " KB";
-        }
-        return (fileSize / (1024 * 1024)) + " MB";
+    public boolean isImage() {
+        String extension = getFileExtension();
+        return extension.matches("jpg|jpeg|png|gif|webp");
     }
 
     // Getters and Setters
@@ -108,36 +83,12 @@ public class Attachment {
         this.transRecord = transRecord;
     }
 
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
-    }
-
     public String getFilePath() {
         return filePath;
     }
 
     public void setFilePath(String filePath) {
         this.filePath = filePath;
-    }
-
-    public Long getFileSize() {
-        return fileSize;
-    }
-
-    public void setFileSize(Long fileSize) {
-        this.fileSize = fileSize;
-    }
-
-    public String getMimeType() {
-        return mimeType;
-    }
-
-    public void setMimeType(String mimeType) {
-        this.mimeType = mimeType;
     }
 
     public LocalDateTime getUploadedAt() {
@@ -152,9 +103,8 @@ public class Attachment {
     public String toString() {
         return "Attachment{"
                 + "id=" + id
-                + ", fileName='" + fileName + '\''
-                + ", fileSize=" + getFormattedFileSize()
-                + ", mimeType='" + mimeType + '\''
+                + ", filePath='" + filePath + '\''
+                + ", uploadedAt=" + uploadedAt
                 + '}';
     }
 }

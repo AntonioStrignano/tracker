@@ -1,13 +1,23 @@
 package com.tracker.app.entity;
 
-import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "goals")
@@ -31,6 +41,9 @@ public class Goal {
     @PositiveOrZero(message = "Current amount must be positive or zero")
     @Column(name = "current_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal currentAmount = BigDecimal.ZERO;
+
+    @Column(name = "last_calculated", nullable = false)
+    private LocalDateTime lastCalculated = LocalDateTime.now();
 
     @Column(name = "deadline")
     private LocalDate deadline;
@@ -58,6 +71,7 @@ public class Goal {
         this.deadline = deadline;
         this.priority = priority != null ? priority : GoalPriority.MEDIUM;
         this.currentAmount = BigDecimal.ZERO;
+        this.lastCalculated = LocalDateTime.now();
         this.isAchieved = false;
     }
 
@@ -78,11 +92,71 @@ public class Goal {
     }
 
     // Business methods
+    // Smart current amount management
+    public BigDecimal getCurrentAmountForContext(String context) {
+        return switch (context) {
+            case "API_LIST" ->
+                getCurrentAmountCached();           // Lista goals - cached OK
+            case "API_DETAIL" ->
+                getCurrentAmountFresh();          // Dettaglio singolo - fresh
+            case "DASHBOARD" ->
+                getCurrentAmountSmart();           // Dashboard - smart refresh
+            case "TRANSACTION_CREATE" ->
+                getCurrentAmountFresh();   // Dopo transazione - fresh
+            default ->
+                getCurrentAmountCached();
+        };
+    }
+
+    // Sempre cached (per liste/dashboard)
+    private BigDecimal getCurrentAmountCached() {
+        return this.currentAmount;
+    }
+
+    // Sempre fresh (per dettagli/update) - placeholder for service injection
+    private BigDecimal getCurrentAmountFresh() {
+        // TODO: This will be implemented in service layer with transaction calculation
+        // For now, return cached value and mark for refresh
+        this.lastCalculated = LocalDateTime.now();
+        return this.currentAmount;
+    }
+
+    // Smart: fresh solo se stale
+    private BigDecimal getCurrentAmountSmart() {
+        if (isStaleData()) {
+            return getCurrentAmountFresh();
+        }
+        return getCurrentAmountCached();
+    }
+
+    // Configurable staleness based on priority
+    private boolean isStaleData() {
+        java.time.Duration staleThreshold = getStaleThresholdByPriority();
+        return lastCalculated.isBefore(LocalDateTime.now().minus(staleThreshold));
+    }
+
+    private java.time.Duration getStaleThresholdByPriority() {
+        return switch (this.priority) {
+            case HIGH ->
+                java.time.Duration.ofMinutes(15);    // Goal alta priorità = refresh frequente
+            case MEDIUM ->
+                java.time.Duration.ofHours(1);     // Media priorità = 1 ora
+            case LOW ->
+                java.time.Duration.ofHours(6);        // Bassa priorità = 6 ore
+        };
+    }
+
+    // Update cached amount (called from service layer)
+    public void updateCachedAmount(BigDecimal newAmount) {
+        this.currentAmount = newAmount;
+        this.lastCalculated = LocalDateTime.now();
+    }
+
     public BigDecimal getProgressPercentage() {
         if (targetAmount.equals(BigDecimal.ZERO)) {
             return BigDecimal.ZERO;
         }
-        return currentAmount.divide(targetAmount, 4, BigDecimal.ROUND_HALF_UP)
+        return currentAmount.divide(targetAmount, 4, java.math.RoundingMode.HALF_UP)
                 .multiply(BigDecimal.valueOf(100));
     }
 
@@ -165,6 +239,14 @@ public class Goal {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public LocalDateTime getLastCalculated() {
+        return lastCalculated;
+    }
+
+    public void setLastCalculated(LocalDateTime lastCalculated) {
+        this.lastCalculated = lastCalculated;
     }
 
     @Override
